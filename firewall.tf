@@ -1,5 +1,5 @@
 resource "digitalocean_firewall" "dev_database" {
-  name        = "rationalization-dev-db-fw"
+  name        = "${local.droplet_name}-fw"
   droplet_ids = [digitalocean_droplet.main.id]
 
   # SSH

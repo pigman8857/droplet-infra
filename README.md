@@ -1,18 +1,18 @@
-# Rationalize Droplet Infrastructure
+# Droplet Infrastructure
 
 Terraform automation for provisioning a DigitalOcean Droplet running **Kafka** and **MongoDB** as Docker containers — offloading heavy services from your laptop for local development.
 
 ## Motivation
 
-The rationalization portal service requires 5 infrastructure services running simultaneously during local development:
+A typical development setup requires 5 infrastructure services running simultaneously:
 
-| Service | Role |
-|---------|------|
-| **MongoDB** | Primary database |
-| **Kafka** | Event streaming / message broker |
-| **Jaeger** | OpenTelemetry tracing |
-| **Kafka-UI** | Web dashboard for Kafka |
-| **Redis** | Caching |
+| Service      | Role                             |
+| ------------ | -------------------------------- |
+| **MongoDB**  | Primary database                 |
+| **Kafka**    | Event streaming / message broker |
+| **Jaeger**   | OpenTelemetry tracing            |
+| **Kafka-UI** | Web dashboard for Kafka          |
+| **Redis**    | Caching                          |
 
 Running all 5 as Docker containers on a single laptop consumes too much RAM, causing slowdowns or crashes. **Kafka and MongoDB are the heaviest** — Kafka alone needs ~1–2 GB, and MongoDB's working set grows with data.
 
@@ -34,8 +34,8 @@ Since the Droplet is only needed during active development, it is **created at t
 │  │ Kafka-UI   :9333      │──┼───────►│  └────────────────────────────┘  │
 │  └───────────────────────┘  │        │                                  │
 │                             │        │  Firewall: only YOUR IP allowed  │
-│  rationalization-portal-    │        └──────────────────────────────────┘
-│  service (your app)         │
+│  Your application            │        └──────────────────────────────────┘
+│                             │
 └─────────────────────────────┘
 ```
 
@@ -51,42 +51,43 @@ Since the Droplet is only needed during active development, it is **created at t
 
 ```bash
 git clone <your-repo-url>
-cd rationalize-droplet-infra
+cd droplet-infra
 ```
 
 ### 2. Add your DigitalOcean token
 
 Create a `terraform.tfvars` file (this file is gitignored and will never be committed):
 
-```bash
-echo 'do_token = "dop_v1_your_token_here"' > terraform.tfvars
+```hcl
+do_token     = "dop_v1_your_token_here"
+project_name = "myapp"   # prefix for all resource names
 ```
 
 > **How to create a token with minimum required scopes:**
 >
 > 1. Go to **DigitalOcean Console** → **API** → **Tokens** → **Generate New Token**
-> 2. Name it (e.g. `rationalization-terraform`)
+> 2. Name it (e.g. `droplet-infra-terraform`)
 > 3. Choose **Custom Scopes** (not Full Access)
 > 4. Enable these scopes (19 total):
 >
 > **Full Access (read + write):**
 >
-> | Scope | Permissions | Why |
-> |-------|------------|-----|
-> | `actions` | read | Terraform polls action status to know when operations complete |
-> | `droplet` | create, read, update, delete, admin | Create, manage, and destroy the Droplet |
-> | `firewall` | create, read, update, delete | Create and update the firewall rules |
-> | `regions` | read | Terraform validates the region (`sgp1`) exists |
-> | `sizes` | read | Terraform validates the Droplet size (`s-2vcpu-4gb`) exists |
-> | `ssh_key` | create, read, update, delete | Upload and manage the generated SSH key |
+> | Scope      | Permissions                         | Why                                                            |
+> | ---------- | ----------------------------------- | -------------------------------------------------------------- |
+> | `actions`  | read                                | Terraform polls action status to know when operations complete |
+> | `droplet`  | create, read, update, delete, admin | Create, manage, and destroy the Droplet                        |
+> | `firewall` | create, read, update, delete        | Create and update the firewall rules                           |
+> | `regions`  | read                                | Terraform validates the region (`sgp1`) exists                 |
+> | `sizes`    | read                                | Terraform validates the Droplet size (`s-2vcpu-4gb`) exists    |
+> | `ssh_key`  | create, read, update, delete        | Upload and manage the generated SSH key                        |
 >
 > **Read-only Access:**
 >
-> | Scope | Permissions | Why |
-> |-------|------------|-----|
-> | `image` | read | Terraform looks up the OS image (`ubuntu-24-04-x64`) |
-> | `snapshot` | read | Required by the DigitalOcean Terraform provider |
-> | `vpc` | read | Terraform reads default VPC info for the Droplet |
+> | Scope      | Permissions | Why                                                  |
+> | ---------- | ----------- | ---------------------------------------------------- |
+> | `image`    | read        | Terraform looks up the OS image (`ubuntu-24-04-x64`) |
+> | `snapshot` | read        | Required by the DigitalOcean Terraform provider      |
+> | `vpc`      | read        | Terraform reads default VPC info for the Droplet     |
 >
 > 5. Set an expiry (e.g. 90 days) for safety
 > 6. Copy the token — you won't see it again
@@ -145,14 +146,14 @@ This starts Jaeger, Redis, and Kafka-UI on your laptop. Kafka-UI is already conf
 
 Update your application's `.env` or config to point to:
 
-| Service  | Address                                                  |
-|----------|----------------------------------------------------------|
-| MongoDB  | `mongodb://<droplet_ip>:27017/?directConnection=true`    |
-| Kafka    | `<droplet_ip>:9092`                                      |
-| Redis    | `localhost:6379`                                         |
-| Jaeger   | `localhost:4317` (OTLP gRPC)                             |
-| Kafka UI | `http://localhost:9333`                                  |
-| Jaeger UI| `http://localhost:16686`                                 |
+| Service   | Address                                               |
+| --------- | ----------------------------------------------------- |
+| MongoDB   | `mongodb://<droplet_ip>:27017/?directConnection=true` |
+| Kafka     | `<droplet_ip>:9092`                                   |
+| Redis     | `localhost:6379`                                      |
+| Jaeger    | `localhost:4317` (OTLP gRPC)                          |
+| Kafka UI  | `http://localhost:9333`                               |
+| Jaeger UI | `http://localhost:16686`                              |
 
 ## Common Operations
 
@@ -205,10 +206,10 @@ Type `yes` to confirm. This removes the Droplet, firewall, and SSH key from Digi
 ## File Structure
 
 ```
-rationalize-droplet-infra/
+droplet-infra/
 ├── .gitignore              # Ignores state, tfvars, generated/
 ├── versions.tf             # Terraform & provider version constraints
-├── variables.tf            # Input variables (do_token, region, size, etc.)
+├── variables.tf            # Input variables (do_token, project_name, region, size, etc.)
 ├── data.tf                 # Auto-detects your laptop's public IP
 ├── main.tf                 # SSH key, Droplet, Docker install, compose upload
 ├── firewall.tf             # Firewall rules (your IP only)
@@ -228,17 +229,18 @@ Override defaults in `terraform.tfvars`:
 
 ```hcl
 do_token     = "dop_v1_your_token_here"
+project_name = "myapp"                   # required: prefix for all resource names
 region       = "sgp1"                    # default: Singapore
 droplet_size = "s-2vcpu-4gb"             # default: 4GB RAM / 2 CPUs ($24/mo)
-droplet_name = "rationalization-dev-db"  # default
+droplet_name = ""                        # default: {project_name}-dev-db
 ```
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
+| Problem                                | Solution                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `terraform apply` hangs on provisioner | The Droplet may still be booting. Wait a few minutes. If it persists, `terraform destroy` and re-apply. |
-| Connection timeout after apply | Your public IP likely changed. Run `terraform apply` to update the firewall. |
-| `docker compose` not found on Droplet | SSH in and run: `curl -fsSL https://get.docker.com \| sh` |
-| Kafka-UI can't connect to broker | Verify the Droplet firewall allows your IP on port 9092: `terraform output my_detected_ip` |
-| MongoDB extension can't connect | Use the full connection string with `?directConnection=true` |
+| Connection timeout after apply         | Your public IP likely changed. Run `terraform apply` to update the firewall.                            |
+| `docker compose` not found on Droplet  | SSH in and run: `curl -fsSL https://get.docker.com \| sh`                                               |
+| Kafka-UI can't connect to broker       | Verify the Droplet firewall allows your IP on port 9092: `terraform output my_detected_ip`              |
+| MongoDB extension can't connect        | Use the full connection string with `?directConnection=true`                                            |

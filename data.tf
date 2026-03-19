@@ -4,5 +4,6 @@ data "http" "my_ip" {
 }
 
 locals {
-  my_ip = trimspace(data.http.my_ip.response_body)
+  my_ip        = trimspace(data.http.my_ip.response_body)
+  droplet_name = var.droplet_name != "" ? var.droplet_name : "${var.project_name}-dev-db"
 }

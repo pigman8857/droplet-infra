@@ -5,7 +5,7 @@ resource "tls_private_key" "droplet" {
 }
 
 resource "digitalocean_ssh_key" "droplet" {
-  name       = "rationalization-dev-db"
+  name       = local.droplet_name
   public_key = tls_private_key.droplet.public_key_openssh
 }
 
@@ -18,7 +18,7 @@ resource "local_sensitive_file" "ssh_private_key" {
 # ─── Droplet ───────────────────────────────────────────────
 
 resource "digitalocean_droplet" "main" {
-  name     = var.droplet_name
+  name     = local.droplet_name
   region   = var.region
   size     = var.droplet_size
   image    = var.droplet_image
@@ -34,7 +34,8 @@ resource "digitalocean_droplet" "main" {
   # Upload the templated docker-compose file
   provisioner "file" {
     content = templatefile("${path.module}/templates/cloud-docker-compose.yml.tpl", {
-      droplet_ip = self.ipv4_address
+      droplet_ip   = self.ipv4_address
+      project_name = var.project_name
     })
     destination = "/root/docker-compose.yml"
   }
@@ -54,7 +55,8 @@ resource "digitalocean_droplet" "main" {
 
 resource "local_file" "local_compose" {
   content = templatefile("${path.module}/templates/local-docker-compose.yml.tpl", {
-    droplet_ip = digitalocean_droplet.main.ipv4_address
+    droplet_ip   = digitalocean_droplet.main.ipv4_address
+    project_name = var.project_name
   })
   filename = "${path.module}/generated/local-docker-compose.yml"
 }
