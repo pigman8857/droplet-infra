@@ -22,8 +22,13 @@ variable "droplet_image" {
   default     = "ubuntu-24-04-x64"
 }
 
-variable "droplet_name" {
-  description = "Droplet hostname"
+variable "project_name" {
+  description = "Project name used as a prefix for all resource names"
   type        = string
-  default     = "rationalization-dev-db"
+}
+
+variable "droplet_name" {
+  description = "Droplet hostname (defaults to {project_name}-dev-db)"
+  type        = string
+  default     = ""
 }

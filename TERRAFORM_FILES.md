@@ -38,10 +38,11 @@ Authenticates with DigitalOcean using your API token.
 | Variable | Type | Default | Required | Purpose |
 |----------|------|---------|----------|---------|
 | `do_token` | `string` (sensitive) | — | **Yes** | Your DigitalOcean API token. Marked `sensitive` so it never appears in logs or `terraform output` |
+| `project_name` | `string` | — | **Yes** | Prefix for all resource names (Droplet, firewall, containers) |
 | `region` | `string` | `sgp1` | No | Singapore datacenter — closest to you |
 | `droplet_size` | `string` | `s-2vcpu-4gb` | No | The $24/mo plan (4GB RAM, 2 CPUs, 80GB disk) |
 | `droplet_image` | `string` | `ubuntu-24-04-x64` | No | Ubuntu 24.04 LTS base OS |
-| `droplet_name` | `string` | `rationalization-dev-db` | No | Hostname shown in the DigitalOcean dashboard |
+| `droplet_name` | `string` | `{project_name}-dev-db` | No | Droplet hostname (auto-computed from `project_name` if not set) |
 
 You set these in `terraform.tfvars` (gitignored) or pass them via `-var` flags.
 
@@ -55,13 +56,15 @@ data "http" "my_ip" {
 }
 
 locals {
-  my_ip = trimspace(data.http.my_ip.response_body)
+  my_ip        = trimspace(data.http.my_ip.response_body)
+  droplet_name = var.droplet_name != "" ? var.droplet_name : "${var.project_name}-dev-db"
 }
 ```
 
 - Calls an AWS service that returns your public IP address as plain text
 - `trimspace()` removes the trailing newline
-- Stored in `local.my_ip` and used by `firewall.tf` so you never need to manually type your IP
+- `local.my_ip` is used by `firewall.tf` so you never need to manually type your IP
+- `local.droplet_name` computes the Droplet hostname from `project_name` (or uses a custom `droplet_name` if provided)
 - **Re-detected on every `terraform apply`** — if you change networks (home → office → coffee shop), just re-apply and the firewall updates automatically
 
 ---
@@ -80,7 +83,7 @@ Generates an ED25519 SSH key pair in memory. No manual `ssh-keygen` needed.
 
 ```hcl
 resource "digitalocean_ssh_key" "droplet" {
-  name       = "rationalization-dev-db"
+  name       = local.droplet_name
   public_key = tls_private_key.droplet.public_key_openssh
 }
 ```
@@ -101,7 +104,7 @@ Saves the **private** key to `generated/id_ed25519` on your laptop with `0600` p
 
 ```hcl
 resource "digitalocean_droplet" "main" {
-  name     = var.droplet_name
+  name     = local.droplet_name
   region   = var.region
   size     = var.droplet_size
   image    = var.droplet_image
@@ -130,14 +133,15 @@ Tells Terraform how to SSH into the Droplet for the provisioners below. `self.ip
 ```hcl
 provisioner "file" {
   content = templatefile("${path.module}/templates/cloud-docker-compose.yml.tpl", {
-    droplet_ip = self.ipv4_address
+    droplet_ip   = self.ipv4_address
+    project_name = var.project_name
   })
   destination = "/root/docker-compose.yml"
 }
 ```
 
 - Reads `templates/cloud-docker-compose.yml.tpl`
-- Replaces `${droplet_ip}` with the actual Droplet IP
+- Replaces `${droplet_ip}` with the actual Droplet IP and `${project_name}` with the project name
 - Uploads the rendered file to `/root/docker-compose.yml` on the Droplet
 
 #### provisioner "remote-exec" (lines 43–50)
@@ -165,7 +169,8 @@ Runs these commands on the Droplet in order:
 ```hcl
 resource "local_file" "local_compose" {
   content = templatefile("${path.module}/templates/local-docker-compose.yml.tpl", {
-    droplet_ip = digitalocean_droplet.main.ipv4_address
+    droplet_ip   = digitalocean_droplet.main.ipv4_address
+    project_name = var.project_name
   })
   filename = "${path.module}/generated/local-docker-compose.yml"
 }
@@ -181,7 +186,7 @@ resource "local_file" "local_compose" {
 
 ```hcl
 resource "digitalocean_firewall" "dev_database" {
-  name        = "rationalization-dev-db-fw"
+  name        = "${local.droplet_name}-fw"
   droplet_ids = [digitalocean_droplet.main.id]
   ...
 }

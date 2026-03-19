@@ -6,7 +6,7 @@ services:
   # ─── MongoDB ─────────────────────────────────────────────
   mongodb:
     image: mongo:7.0
-    container_name: rationalization-mongodb-cloud
+    container_name: ${project_name}-mongodb-cloud
     ports:
       - "27017:27017"
     volumes:
@@ -25,7 +25,7 @@ services:
   # ─── Kafka (KRaft mode) ──────────────────────────────────
   kafka:
     image: confluentinc/cp-kafka:7.6.0
-    container_name: rationalization-kafka-cloud
+    container_name: ${project_name}-kafka-cloud
     ports:
       - "9092:9092"
       - "9101:9101"

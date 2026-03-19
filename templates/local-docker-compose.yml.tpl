@@ -7,7 +7,7 @@ services:
   # ─── OpenTelemetry (Jaeger) ──────────────────────────────
   jaeger:
     image: jaegertracing/jaeger:2.6.0
-    container_name: rationalization-jaeger-local
+    container_name: ${project_name}-jaeger-local
     ports:
       - "16686:16686"  # UI
       - "4317:4317"    # OTLP gRPC
@@ -19,19 +19,19 @@ services:
   # ─── Kafka UI ────────────────────────────────────────────
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    container_name: rationalization-kafka-ui-local
+    container_name: ${project_name}-kafka-ui-local
     ports:
       - "9333:8080"
     environment:
       DYNAMIC_CONFIG_ENABLED: "true"
-      KAFKA_CLUSTERS_0_NAME: "rationalization-cloud"
+      KAFKA_CLUSTERS_0_NAME: "${project_name}-cloud"
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "${droplet_ip}:9092"
     restart: unless-stopped
 
   # ─── Redis ───────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: rationalization-redis-local
+    container_name: ${project_name}-redis-local
     ports:
       - "6379:6379"
     volumes:
