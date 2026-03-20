@@ -12,6 +12,7 @@ graph TD
         SIZE[var.droplet_size]
         IMAGE[var.droplet_image]
         NAME[var.droplet_name]
+        TOPICS[var.kafka_topics]
     end
 
     subgraph "data.tf — Auto-detect IP"
@@ -33,6 +34,10 @@ graph TD
         UPLOAD["provisioner file<br/>uploads docker-compose.yml<br/>(from cloud template)"]
         REMOTE["provisioner remote-exec<br/>1. cloud-init wait<br/>2. install Docker<br/>3. docker compose up -d"]
         DROPLET --> UPLOAD --> REMOTE
+    end
+
+    subgraph "main.tf — Kafka Topics"
+        KAFKA_TOPICS["terraform_data.kafka_topics<br/>waits for Kafka readiness,<br/>creates topics via remote-exec"]
     end
 
     subgraph "main.tf — Local Compose"
@@ -59,6 +64,9 @@ graph TD
     DO_SSH --> DROPLET
     TLS --> DROPLET
 
+    DROPLET --> KAFKA_TOPICS
+    TOPICS --> KAFKA_TOPICS
+    TLS --> KAFKA_TOPICS
     DROPLET --> LOCAL_COMPOSE
     DROPLET --> FW
     LOCAL_IP --> FW
@@ -91,7 +99,7 @@ flowchart TD
     CREATE_TOKEN --> CLONE[Clone this repo]
     CLONE --> TFVARS["Create terraform.tfvars<br/>do_token = your_token"]
     TFVARS --> INIT["terraform init<br/>downloads providers:<br/>digitalocean, local, tls, http"]
-    INIT --> PLAN["terraform plan<br/>preview: 1 SSH key, 1 Droplet,<br/>1 firewall, 2 local files"]
+    INIT --> PLAN["terraform plan<br/>preview: 1 SSH key, 1 Droplet,<br/>1 firewall, 1 Kafka topic provisioner,<br/>2 local files"]
     PLAN --> REVIEW{Review plan<br/>looks good?}
     REVIEW -- No --> EDIT[Edit variables.tf<br/>or terraform.tfvars]
     EDIT --> PLAN
@@ -133,10 +141,11 @@ flowchart TD
 
     PHASE4 --> PHASE5
 
-    subgraph PHASE5 ["Phase 5 — Parallel (depends on Droplet IP)"]
+    subgraph PHASE5 ["Phase 5 — Parallel (depends on Droplet)"]
         direction LR
         P5A["Create firewall<br/>(your IP only on ports<br/>22, 9092, 9101, 27017)"]
         P5B["Generate local-docker-compose.yml<br/>(Droplet IP injected)"]
+        P5C["Create Kafka topics<br/>(terraform_data.kafka_topics:<br/>wait for broker, then create<br/>each topic from tfvars)"]
     end
 
     PHASE5 --> OUTPUT["Terraform prints outputs:<br/>droplet_ip, ssh_command,<br/>mongodb_connection_string,<br/>kafka_broker, my_detected_ip"]
@@ -171,7 +180,12 @@ flowchart TD
         DESTROY --> DONE
     end
 
+    subgraph "Add Kafka topic"
+        ADD_TOPIC["Add topic to kafka_topics<br/>in terraform.tfvars"] --> TOPIC_APPLY["terraform apply<br/>(only terraform_data.kafka_topics<br/>is recreated — Droplet untouched)"]
+        TOPIC_APPLY --> TOPIC_DONE["New topic created,<br/>existing topics skipped"]
+    end
+
     subgraph "Next day (after destroy)"
-        NEXT["terraform apply<br/>(rebuilds everything from scratch)"] --> FRESH([Fresh Droplet + empty databases])
+        NEXT["terraform apply<br/>(rebuilds everything from scratch)"] --> FRESH(["Fresh Droplet + empty databases<br/>+ all topics from tfvars"])
     end
 ```
