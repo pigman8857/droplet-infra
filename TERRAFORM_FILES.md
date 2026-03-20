@@ -43,6 +43,7 @@ Authenticates with DigitalOcean using your API token.
 | `droplet_size` | `string` | `s-2vcpu-4gb` | No | The $24/mo plan (4GB RAM, 2 CPUs, 80GB disk) |
 | `droplet_image` | `string` | `ubuntu-24-04-x64` | No | Ubuntu 24.04 LTS base OS |
 | `droplet_name` | `string` | `{project_name}-dev-db` | No | Droplet hostname (auto-computed from `project_name` if not set) |
+| `kafka_topics` | `list(object)` | — | **Yes** | Kafka topics to create after provisioning. Each object has `name` (required), `partitions` (default 1), `replication_factor` (default 1) |
 
 You set these in `terraform.tfvars` (gitignored) or pass them via `-var` flags.
 
@@ -100,7 +101,7 @@ resource "local_sensitive_file" "ssh_private_key" {
 
 Saves the **private** key to `generated/id_ed25519` on your laptop with `0600` permissions (owner-only read/write). Uses `local_sensitive_file` (not `local_file`) so the key content is never printed in Terraform output.
 
-### Droplet (lines 20–51)
+### Droplet (lines 20–52)
 
 ```hcl
 resource "digitalocean_droplet" "main" {
@@ -164,7 +165,51 @@ Runs these commands on the Droplet in order:
 3. `systemctl enable --now docker` — starts Docker and enables it on boot
 4. `cd /root && docker compose up -d` — starts MongoDB + Kafka containers in detached mode
 
-### Generate Local Compose (lines 55–60)
+### Kafka Topics (lines 56–80)
+
+```hcl
+resource "terraform_data" "kafka_topics" {
+  depends_on = [digitalocean_droplet.main]
+
+  triggers_replace = [var.kafka_topics, digitalocean_droplet.main.id]
+
+  connection {
+    type        = "ssh"
+    user        = "root"
+    private_key = tls_private_key.droplet.private_key_openssh
+    host        = digitalocean_droplet.main.ipv4_address
+  }
+
+  provisioner "remote-exec" {
+    inline = concat(
+      [
+        "for i in $(seq 1 12); do docker exec ${var.project_name}-kafka-cloud kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1 && break || sleep 5; done",
+      ],
+      [for t in var.kafka_topics :
+        "docker exec ${var.project_name}-kafka-cloud kafka-topics --create --topic ${t.name} --partitions ${t.partitions} --replication-factor ${t.replication_factor} --bootstrap-server localhost:9092 --if-not-exists"
+      ]
+    )
+  }
+}
+```
+
+Creates Kafka topics defined in `terraform.tfvars` after the Droplet is fully provisioned. Uses `terraform_data` (the modern replacement for `null_resource`) to keep topic creation **decoupled** from the Droplet provisioner.
+
+- **`depends_on`** — ensures the Droplet (and its Docker install) is complete before running
+- **`triggers_replace`** — recreates this resource when the topic list changes or the Droplet is rebuilt (new ID). This means you can add topics without destroying the Droplet
+- **Readiness loop** — polls `kafka-broker-api-versions` every 5 seconds, up to 12 attempts (60s), waiting for Kafka to be ready
+- **`--if-not-exists`** — makes topic creation idempotent; existing topics are skipped
+
+**Behavior on subsequent applies:**
+
+| Scenario | What happens |
+|----------|-------------|
+| No changes to topics or Droplet | Nothing — resource already exists, triggers unchanged |
+| New topic added to tfvars | Resource recreated → all topics re-run → existing ones skipped, new one created |
+| Topic removed from tfvars | **Not deleted** from Kafka — persists until Droplet is destroyed |
+| Droplet destroyed & recreated | Resource recreated → all topics created on the fresh Droplet |
+
+### Generate Local Compose (lines 84–90)
 
 ```hcl
 resource "local_file" "local_compose" {
